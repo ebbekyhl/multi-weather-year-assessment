@@ -1,0 +1,11 @@
+/.snakemake
+/cluster.yaml
+/dag.png
+/gurobi.log
+/logs
+/networks_n37_168h
+/networks_n37_1h
+/networks_resolved
+/pregraphs
+/prenetworks
+/snakemake_cluster

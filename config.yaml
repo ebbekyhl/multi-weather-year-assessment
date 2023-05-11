@@ -1,0 +1,15 @@
+results_dir: 'results/'
+cap_network_dir: 'networks_n37_168h/'
+pre_network_dir: 'prenetworks/'
+run: 'dispatch_optimization_2013_2008'
+
+design_year: 
+  - 2013
+weather_year: 
+  - 2008
+
+generators_extendable: False
+links_extendable: False
+stores_extendable: False
+
+hydroconstrained: False
