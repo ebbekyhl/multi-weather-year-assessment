@@ -60,64 +60,67 @@ if __name__ == "__main__":
                                 override_component_attrs=overrides)
 
 
-
     # Visualize update in the following figures
-    bus = 'ES0 0' # we pick one of the electricity buses
+    # fig1,ax1 = plt.subplots(figsize=(10,5))
+    # fig2,ax2 = plt.subplots(figsize=(10,5))
+    # fig3,ax3 = plt.subplots(figsize=(10,5))
 
-    fig1,ax1 = plt.subplots(figsize=(10,5))
-    fig2,ax2 = plt.subplots(figsize=(10,5))
-    fig3,ax3 = plt.subplots(figsize=(10,5))
+    # CF_s = n.generators_t.p_max_pu[n.generators.query('carrier == "solar"').index].sum(axis=1)
+    # (CF_s/CF_s.max()).plot(ax=ax1,
+    #                         lw=1,
+    #                         alpha=1,
+    #                         label='old')
 
-    n.generators_t.p_max_pu[bus + ' solar'].plot(ax=ax1,
-                                                 lw=1,
-                                                 alpha=1,
-                                                 label='old')
+    # CF_ow = n.generators_t.p_max_pu[n.generators.query('carrier == "onwind"').index].sum(axis=1)
+    # (CF_ow/CF_ow.max()).plot(ax=ax2,
+    #                         lw=1,
+    #                         alpha=1,
+    #                         label='old')
 
-    n.generators_t.p_max_pu[bus + ' onwind'].plot(ax=ax2,
-                                                 lw=1,
-                                                 alpha=1,
-                                                 label='old')
-
-    n.storage_units_t.inflow[bus + ' hydro'].plot(ax=ax3,
-                                                 lw=1,
-                                                 alpha=1,
-                                                 label='old')
+    # inflow = n.storage_units_t.inflow[n.storage_units_t.inflow.columns[n.storage_units_t.inflow.columns.str.contains('hydro')]]
+    # inflow.sum(axis=1).plot(ax=ax3,
+    #                         lw=1,
+    #                         alpha=1,
+    #                         label='old')
 
     update_renewables(n,n_weather)
     n.export_to_netcdf(snakemake.output.network)
 
-    n.generators_t.p_max_pu[bus + ' solar'].plot(ax=ax1,
-                                                 lw=1,
-                                                 alpha=1,
-                                                 label='new')
-
-    n.generators_t.p_max_pu[bus + ' onwind'].plot(ax=ax2,
-                                                 lw=1,
-                                                 alpha=1,
-                                                 label='new')
-
-    n.storage_units_t.inflow[bus + ' hydro'].plot(ax=ax3,
-                                                 lw=1,
-                                                 alpha=1,
-                                                 label='new')
+    # CF_s_update = n.generators_t.p_max_pu[n.generators.query('carrier == "solar"').index].sum(axis=1)
+    # (CF_s_update/CF_s_update.max()).plot(ax=ax1,
+    #                                     lw=1,
+    #                                     alpha=1,
+    #                                     label='new')
 
 
-    #n.generators_t.p_max_pu[bus + ' solar'].rolling(int(168/3)).mean().plot(ax=ax,lw=1,alpha=1,label='new')
-    ax1.legend(frameon=True)
-    ax2.legend(frameon=True)
-    ax3.legend(frameon=True)
+    # CF_ow_update = n.generators_t.p_max_pu[n.generators.query('carrier == "onwind"').index].sum(axis=1)
+    
+    # (CF_ow_update/CF_ow_update.max()).plot(ax=ax2,
+    #                                         lw=1,
+    #                                         alpha=1,
+    #                                         label='new')
 
-    fig1.savefig(
-                snakemake.output.plot_solar,
-                bbox_inches="tight"
-                )
+    # inflow_update = n.storage_units_t.inflow[n.storage_units_t.inflow.columns[n.storage_units_t.inflow.columns.str.contains('hydro')]]
+    # inflow_update.sum(axis=1).plot(ax=ax3,
+    #                                 lw=1,
+    #                                 alpha=1,
+    #                                 label='new')
 
-    fig2.savefig(
-                snakemake.output.plot_wind,
-                bbox_inches="tight"
-                )
+    # ax1.legend(frameon=True)
+    # ax2.legend(frameon=True)
+    # ax3.legend(frameon=True)
 
-    fig3.savefig(
-                snakemake.output.plot_hydro,
-                bbox_inches="tight"
-                )
+    # fig1.savefig(
+    #             snakemake.output.plot_solar,
+    #             bbox_inches="tight"
+    #             )
+
+    # fig2.savefig(
+    #             snakemake.output.plot_wind,
+    #             bbox_inches="tight"
+    #             )
+
+    # fig3.savefig(
+    #             snakemake.output.plot_hydro,
+    #             bbox_inches="tight"
+    #             )

@@ -42,6 +42,53 @@ def freeze_network(n):
 
     return n 
 
+def add_load_shedding(n):
+    nodes_LV = n.buses.query('carrier == "low voltage"').index
+
+    nodes_heat1= n.buses.query('carrier == "residential rural heat"').index
+    nodes_heat2 = n.buses.query('carrier == "services rural heat"').index
+    nodes_heat3 = n.buses.query('carrier == "residential urban decentral heat"').index
+    nodes_heat4 = n.buses.query('carrier == "services urban decentral heat"').index
+    nodes_heat5 = n.buses.query('carrier == "urban central heat"').index
+    
+    n.add("Carrier", "load_el")
+    n.add("Carrier", "load_heat")
+
+    # Low-voltage electricity grid
+    n.madd("Generator", 
+            nodes_LV + " load shedding",
+            bus=nodes_LV,
+            carrier='load_el',
+            marginal_cost=1e5, # Eur/MWh
+            # intersect between macroeconomic and surveybased willingness to pay
+            # http://journal.frontiersin.org/article/10.3389/fenrg.2015.00055/full
+            #p_nom=1e6, # MW
+            p_nom_extendable = True,
+            capital_cost = 0)
+
+    # Heat buses
+    heat_nodes_dict = {'1':nodes_heat1,
+                        '2':nodes_heat2,
+                        '3':nodes_heat3,
+                        '4':nodes_heat4,
+                        '5':nodes_heat5,}
+
+    for heat_nodes in heat_nodes_dict.keys():
+        n.madd("Generator", 
+                heat_nodes_dict[heat_nodes] + " load shedding",
+                bus=heat_nodes_dict[heat_nodes] ,
+                carrier='load_heat',
+                marginal_cost=1e5, # Eur/MWh
+                # intersect between macroeconomic and surveybased willingness to pay
+                # http://journal.frontiersin.org/article/10.3389/fenrg.2015.00055/full
+                #p_nom=1e6, # MW
+                p_nom_extendable = True,
+                capital_cost = 0)
+    
+    print('Load shedding was added')
+
+    return n 
+
 if __name__ == "__main__":
     if 'snakemake' not in globals():
         from helper import mock_snakemake
@@ -56,5 +103,7 @@ if __name__ == "__main__":
                         override_component_attrs=overrides)
 
     freeze_network(n)
+
+    add_load_shedding(n)
 
     n.export_to_netcdf(snakemake.output.network)

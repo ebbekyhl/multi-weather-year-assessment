@@ -16,25 +16,19 @@ import logging
 logger = logging.getLogger(__name__)
 pypsa.pf.logger.setLevel(logging.WARNING)
 
-def add_load_shedding(n):
-    nodes_LV = n.buses.query('carrier == "low voltage"').index
-    
-    n.add("Carrier", "load")
-    
-    n.madd("Generator", 
-            nodes_LV + " load shedding",
-            bus=nodes_LV,
-            carrier='load',
-            marginal_cost=1e4, # Eur/MWh
-            # intersect between macroeconomic and surveybased willingness to pay
-            # http://journal.frontiersin.org/article/10.3389/fenrg.2015.00055/full
-            p_nom=1e6, # MW
-            p_nom_extendable = True,
-            capital_cost = 0)
-    
-    print('Load shedding was added')
+def reset_temp_information(n):
+    n.generators_t.p[n.generators_t.p.columns] = 0
+    n.links_t.p0[n.links_t.p0.columns] = 0
+    n.links_t.p1[n.links_t.p1.columns] = 0
+    n.links_t.p2[n.links_t.p2.columns] = 0
+    n.links_t.p3[n.links_t.p3.columns] = 0
+    n.links_t.p4[n.links_t.p4.columns] = 0
+    n.stores_t.e[n.stores_t.e.columns] = 0
+    n.stores_t.p[n.stores_t.p.columns] = 0
+    n.stores_t.q[n.stores_t.q.columns] = 0
+    n.storage_units_t.p[n.storage_units_t.p.columns] = 0
 
-    return n 
+    return n
 
 def prepare_network(n, solve_opts=None):
 
@@ -217,7 +211,7 @@ if __name__ == "__main__":
         
         n = pypsa.Network(snakemake.input.network, override_component_attrs=overrides)
 
-        add_load_shedding(n)
+        reset_temp_information(n)
 
         solver_options = {'name':'gurobi',
                 'threads': 4,
@@ -232,7 +226,7 @@ if __name__ == "__main__":
 
         cf_solving = {'formulation': 'kirchhoff',
                 'clip_p_max_pu': 1.e-2,
-                'load_shedding': False,
+                #'load_shedding': False,
                 'noisy_costs': True,
                 'skip_iterations': True,
                 'track_iterations': False,
@@ -245,10 +239,14 @@ if __name__ == "__main__":
 
         n = prepare_network(n, cf_solving)
 
+        n.objective = 0
+
         n = solve_network(n,
                           cf_solving=cf_solving,
                           solver_options=solver_options,
                           solver_dir=tmpdir)
-        n.export_to_netcdf(snakemake.output.network)
+
+        if n.objective > 0:
+            n.export_to_netcdf(snakemake.output.network)
 
     logger.info("Maximum memory usage: {}".format(mem.mem_usage))
