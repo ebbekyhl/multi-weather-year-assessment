@@ -3,9 +3,9 @@
 /dag.png
 /gurobi.log
 /logs
-/networks_n37_168h
+/networks
 /networks_n37_1h
-/networks_resolved
-/pregraphs
+/graphs
 /prenetworks
+/results
 /snakemake_cluster

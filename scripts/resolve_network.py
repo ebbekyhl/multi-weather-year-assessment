@@ -16,6 +16,72 @@ import logging
 logger = logging.getLogger(__name__)
 pypsa.pf.logger.setLevel(logging.WARNING)
 
+def add_load_shedding(n):
+    nodes_LV = n.buses.query('carrier == "low voltage"').index
+    
+    n.add("Carrier", "load")
+    
+    n.madd("Generator", 
+            nodes_LV + " load shedding",
+            bus=nodes_LV,
+            carrier='load',
+            marginal_cost=1e4, # Eur/MWh
+            # intersect between macroeconomic and surveybased willingness to pay
+            # http://journal.frontiersin.org/article/10.3389/fenrg.2015.00055/full
+            p_nom=1e6, # MW
+            p_nom_extendable = True,
+            capital_cost = 0)
+    
+    print('Load shedding was added')
+
+    return n 
+
+def prepare_network(n, solve_opts=None):
+
+    if 'clip_p_max_pu' in solve_opts:
+        for df in (n.generators_t.p_max_pu, n.generators_t.p_min_pu, n.storage_units_t.inflow):
+            df.where(df>solve_opts['clip_p_max_pu'], other=0., inplace=True)
+
+    if solve_opts.get('noisy_costs'):
+        for t in n.iterate_components():
+            if 'marginal_cost' in t.df:
+                np.random.seed(174)
+                t.df['marginal_cost'] += 1e-2 + 2e-3 * (np.random.random(len(t.df)) - 0.5)
+
+        for t in n.iterate_components(['Line', 'Link']):
+            np.random.seed(123)
+            t.df['capital_cost'] += (1e-1 + 2e-2 * (np.random.random(len(t.df)) - 0.5)) * t.df['length']
+
+    if solve_opts.get('nhours'):
+        nhours = solve_opts['nhours']
+        n.set_snapshots(n.snapshots[:nhours])
+        n.snapshot_weightings[:] = 8760./nhours
+
+    return n
+
+def solve_network(n, cf_solving, solver_options, **kwargs):
+    
+    solver_name = solver_options['name']
+
+    track_iterations = cf_solving.get('track_iterations', False)
+    min_iterations = cf_solving.get('min_iterations', 4)
+    max_iterations = cf_solving.get('max_iterations', 6)
+    keep_shadowprices = cf_solving.get('keep_shadowprices', True)
+
+    if cf_solving.get('skip_iterations', False):
+        network_lopf(n, solver_name=solver_name, solver_options=solver_options,
+                     extra_functionality=extra_functionality,
+                     keep_shadowprices=keep_shadowprices, **kwargs)
+    else:
+        ilopf(n, solver_name=solver_name, solver_options=solver_options,
+              track_iterations=track_iterations,
+              min_iterations=min_iterations,
+              max_iterations=max_iterations,
+              extra_functionality=extra_functionality,
+              keep_shadowprices=keep_shadowprices,
+              **kwargs)
+    return n
+
 def read_dispatch(country):
     # Path must be changed to an external repository!
     historical_dispatch = pd.read_csv('hydro_dispatch/hydro_res_dispatch_' + country + '_ENTSOE.csv',index_col=0)
@@ -121,9 +187,8 @@ def add_hydropower_constraint(n):
         else:
             print('hydro unit ', i, ' is attributed with max hours = 6 which already constrains the seasonal hydropower operation.')
 
-
 def extra_functionality(n, snapshots):
-    if snakemake.config["hydroconstrained"]:
+    if snakemake.config['scenario']["hydroconstrained"]:
         add_hydropower_constraint(n)
         
 if __name__ == "__main__":
@@ -131,37 +196,59 @@ if __name__ == "__main__":
         from helper import mock_snakemake
         snakemake = mock_snakemake(
             'solve_network',
-            design_year="2013" 
+            design_year="2013", 
             weather_year="2008",
         )
 
     logging.basicConfig(filename=snakemake.log.python,
                         level=snakemake.config['logging_level'])
 
-    update_config_with_sector_opts(snakemake.config, snakemake.wildcards.sector_opts)
+    # update_config_with_sector_opts(snakemake.config, snakemake.wildcards.sector_opts)
 
     tmpdir = '/scratch/' + os.environ['SLURM_JOB_ID']
     if tmpdir is not None:
         from pathlib import Path
         Path(tmpdir).mkdir(parents=True, exist_ok=True)
 
-    opts = snakemake.wildcards.sector_opts.split('-')
-    solve_opts = snakemake.config['solving']['options']
-
     fn = getattr(snakemake.log, 'memory', None)
     with memory_logger(filename=fn, interval=30.) as mem:
 
         overrides = override_component_attrs(snakemake.input.overrides)
+        
         n = pypsa.Network(snakemake.input.network, override_component_attrs=overrides)
 
-        n = prepare_network(n, solve_opts)
+        add_load_shedding(n)
 
-        n = solve_network(n, 
-                          config=snakemake.config, 
-                          opts=opts,
-                          solver_dir=tmpdir,
-                          solver_logfile=snakemake.log.solver)
+        solver_options = {'name':'gurobi',
+                'threads': 4,
+                'method': 2, # barrier    
+                'crossover': 0, 
+                'BarConvTol': 1.e-6, 
+                'Seed': 123, 
+                'AggFill': 0, 
+                'PreDual': 0, 
+                'GURO_PAR_BARDENSETHRESH': 200
+                    }
 
+        cf_solving = {'formulation': 'kirchhoff',
+                'clip_p_max_pu': 1.e-2,
+                'load_shedding': False,
+                'noisy_costs': True,
+                'skip_iterations': True,
+                'track_iterations': False,
+                'min_iterations': 4,
+                'max_iterations': 6,
+                'keep_shadowprices': ['Bus', 'Line', 'Link', 'Transformer', 
+                                    'GlobalConstraint', 'Generator', 
+                                    'Store', 'StorageUnit']
+                }
+
+        n = prepare_network(n, cf_solving)
+
+        n = solve_network(n,
+                          cf_solving=cf_solving,
+                          solver_options=solver_options,
+                          solver_dir=tmpdir)
         n.export_to_netcdf(snakemake.output.network)
 
     logger.info("Maximum memory usage: {}".format(mem.mem_usage))

@@ -21,7 +21,7 @@ if __name__ == "__main__":
         from helper import mock_snakemake
         snakemake = mock_snakemake(
             'solve_network',
-            design_year="2013" 
+            design_year="2013", 
             weather_year="2008",
         )
     
@@ -35,12 +35,24 @@ if __name__ == "__main__":
                                 override_component_attrs=overrides)
 
     fig,ax = plt.subplots(figsize=(10,5))
-    loads = n.loads_t.p[n.loads.index[n.loads.index.str.contains('heat')]].sum(axis=1)
+    
+    A = n.loads.index[n.loads.index.str.contains('heat')]
+    B = n.loads_t.p_set.columns
+    shared_indices = [i for i, item in enumerate(A) if item in B]
+    print("Warning! ", n.loads.loc[A].drop(index=A[shared_indices]).index, " did not have any heat demand")
+    loads = n.loads_t.p_set[A[shared_indices]].sum(axis=1)
+    
     #loads_w = n_weather.loads_t.p[n_weather.loads.index[n_weather.loads.index.str.contains('heat')]].sum(axis=1)
     ax.plot(loads,alpha=0.5,label='old')
 
     update_heat(n,n_weather)
     n.export_to_netcdf(snakemake.output.network)
+
+    A = n.loads.index[n.loads.index.str.contains('heat')]
+    B = n.loads_t.p_set.columns
+    shared_indices = [i for i, item in enumerate(A) if item in B]
+    print("Warning! ", n.loads.loc[A].drop(index=A[shared_indices]).index, " did not have any heat demand")
+    loads = n.loads_t.p_set[A[shared_indices]].sum(axis=1)
 
     ax.plot(loads,alpha=0.5,label='new')
     
