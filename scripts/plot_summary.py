@@ -14,6 +14,11 @@ tech_colors['urban central gas CHP CC'] = tech_colors['gas']
 tech_colors['urban central solid biomass CHP'] = tech_colors['biomass']
 tech_colors['urban central solid biomass CHP CC'] = tech_colors['biomass']
 tech_colors['lost load el.'] = 'k'
+tech_colors['biogas to gas'] = tech_colors['biogas']
+tech_colors['process'] = tech_colors['process emissions']
+tech_colors['oil load'] = tech_colors['oil']
+tech_colors['agriculture machinery'] = 'k'
+tech_colors['dac'] = tech_colors['DAC']
 
 fs = 16
 plt.style.use('seaborn-ticks')
@@ -48,31 +53,21 @@ def plot_co2_balance(df):
     df_plot = df[dyear]
 
     df_plot['design'] = df['design'].loc[df_plot.index]
-    
-    # emissions sources
-    electricity_supply_emissions = df_plot.loc['co2_electricity_mill_t'] # million tonne of CO2 emitted from plants purely producing electricity 
-    CHP_net_emissions = df_plot.loc['co2_chp_mill_t'] # million tonne of CO2 emitted from combined heat and power plants
-    # the "CHP" variable here is the net emissions of postive (gas) and negative (biomass CC) emittors
-    process_emissions = df_plot.loc['co2_process_mill_t'] # million tonne of CO2 emitted from industrial processes
-    dac_capture = -df_plot.loc['co2_dac_mill_t'] # million tonne of CO2 captured with direct air capture technology
-    
-    co2_net = df_plot.loc['co2_net']
 
-    dic = {'Electricity':electricity_supply_emissions,
-           'CHP':CHP_net_emissions,
-           'Process_emissions':process_emissions,
-           'DAC':dac_capture,
-           }
+    df_co2 = df_plot.loc[df_plot.index[df_plot.index.str.contains('co2 emissions')]]
+    df_co2['carrier'] = df_co2.index
+    df_co2['carrier'] = df_co2.carrier.str.split('co2 emissions ',1,expand=True)[1]
 
-    dic_to_df = pd.DataFrame.from_dict(dic)
-    dic_to_df.plot.bar(ax=ax,
-                       stacked=True,
-                       legend=False)
+    df_co2.drop(columns='carrier').T.plot.bar(ax=ax,
+                                            stacked=True,
+                                            color=[tech_colors[t] for t in list(df_co2.carrier)],
+                                            legend=False)
 
-    print(co2_net)
+    co2_net = df_plot.loc['net emissions']
+
     ax.scatter(co2_net.index,co2_net,color='k',marker='_',s=5,label='Net emissions')
 
-    ax.set_ylabel('Mill. tCO2')
+    ax.set_ylabel('CO2 [MtCO2/a]')
 
     fig.legend(bbox_to_anchor=(0.7, -0.15),
                 borderaxespad=0,

@@ -81,36 +81,73 @@ def calculate_summary(n,label,df):
     ###############################################################
     ######################## CO2 emissions ########################
     ###############################################################
-    # CO2 emitters from power or heat production
+    # CO2 emittors and capturing facilities from power, heat and fuel production
     co2_emittors = n.links.query('bus2 == "co2 atmosphere"') # links going from fuel buses (e.g., gas, coal, lignite etc.) to "CO2 atmosphere" bus
-    co2_emittors = co2_emittors.query('efficiency2 > 0') # excluding links with no CO2 emissions (e.g., nuclear)
+    co2_emittors = co2_emittors.query('efficiency2 != 0') # excluding links with no CO2 emissions (e.g., nuclear)
     co2_t = -n.links_t.p2[co2_emittors.index]*tres_factor
 
-    # CO2 emittors and capturing facilities from power or heat production
+    co2_t_renamed = co2_t.rename(columns=co2_emittors.carrier.to_dict())
+    co2_t_grouped = co2_t_renamed.groupby(by=co2_t_renamed.columns,axis=1).sum().sum()
+    for i in range(len(co2_t_grouped.index)):
+        if 'gas boiler' not in co2_t_grouped.index[i]:
+            co2_t_i = round(co2_t_grouped.iloc[i]/1e6,sig_dig)
+            df.loc['co2 emissions ' + co2_t_grouped.index[i],label] = co2_t_i
+
+    co2_t_gas_boiler = round(co2_t_grouped.loc[co2_t_grouped.index[co2_t_grouped.index.str.contains('gas boiler')]].sum()/1e6,sig_dig)
+
+    df.loc['co2 emissions gas boiler',label] = co2_t_gas_boiler
+    ###############################################################
+
+    # CO2 emissions and capturing from chp plants
     chp = n.links.query('bus3 == "co2 atmosphere"') # links going from CHP fuel buses (e.g., biomass or natural gas) to "CO2 atmosphere" bus
-    co2_chp_t = -n.links_t.p3[chp.index] *tres_factor
-    # NB! Biomass w.o. CC has no emissions. Biomass w. CC then have negative emissions.
+    co2_chp_t = -n.links_t.p3[chp.index]*tres_factor
+    # NB! Biomass w.o. CC has no emissions. For this reason, Biomass w. CC has negative emissions.
+
+    co2_chp_t_renamed = co2_chp_t.rename(columns=chp.carrier.to_dict())
+    co2_chp_t_renamed_grouped = co2_chp_t_renamed.groupby(by=co2_chp_t_renamed .columns,axis=1).sum().sum()
+
+    co2_chp_t_renamed_grouped_gas = round(co2_chp_t_renamed_grouped.loc[co2_chp_t_renamed_grouped.index[co2_chp_t_renamed_grouped.index.str.contains('gas CHP')]].sum()/1e6,sig_dig)
+    co2_chp_t_renamed_grouped_biomass = round(co2_chp_t_renamed_grouped.loc[co2_chp_t_renamed_grouped.index[co2_chp_t_renamed_grouped.index.str.contains('solid biomass CHP')]].sum()/1e6,sig_dig)
+
+    df.loc['co2 emissions gas CHP',label] = co2_chp_t_renamed_grouped_gas
+    df.loc['co2 emissions biomass CHP',label] = co2_chp_t_renamed_grouped_biomass 
+    ###############################################################
 
     # process emissions
     co2_process = n.links.query('bus1 == "co2 atmosphere"').index # links going from "process emissions" to "CO2 atmosphere" bus
     co2_process_t = -n.links_t.p1[co2_process]*tres_factor
+    # process emissions have CC which captures 90 % of emissions. Here, we only consider the 10 % being emitted.
+    # to include the 90% capture in the balance, call: -n.links_t.p2["EU process emissions CC"]
+    co2_process_t_sum = round(co2_process_t.sum().sum()/1e6,sig_dig)
+
+    df.loc['co2 emissions process', label] = co2_process_t_sum 
+    ###############################################################
+
+    # load emissions (e.g., land transport or agriculture)
+    loads_co2 = n.loads # .query('bus == "co2 atmosphere"')
+    load_emissions_index = loads_co2.index[loads_co2.index.str.contains('emissions')]
+    load_emissions = n.loads.loc[load_emissions_index]
+    load_emissions_t = -n.loads_t.p[load_emissions_index]*tres_factor
+
+    load_emissions_t_sum_oil = round(load_emissions_t['oil emissions'].sum()/1e6,sig_dig)
+    load_emissions_t_sum_agriculture = round(load_emissions_t['agriculture machinery oil emissions'].sum()/1e6,sig_dig)
+
+    df.loc['co2 emissions oil load', label] = load_emissions_t_sum_oil
+    df.loc['co2 emissions agriculture machinery', label] = load_emissions_t_sum_agriculture
+    ###############################################################
 
     # direct air capture
     dac = n.links.index[n.links.index.str.contains('DAC')] # links going from "CO2 atmosphere" to "CO2 stored" (sequestration)
     co2_dac_t = -n.links_t.p1[dac]*tres_factor 
+    co2_dac_t_sum = -round(co2_dac_t.sum().sum()/1e6,sig_dig) # i.e., negative emissions
+
+    df.loc['co2 emissions dac', label] = co2_dac_t_sum
+    ###############################################################
 
     # CO2 balance
-    co2_tot = sum([co2_t.sum().sum(),
-                   co2_chp_t.sum().sum(),
-                   co2_process_t.sum().sum(),
-                   -co2_dac_t.sum().sum()])
-    
-    df.loc['co2_electricity_mill_t', label] = round(co2_t.sum().sum()/1e6,sig_dig)
-    df.loc['co2_chp_mill_t', label] = round(co2_chp_t.sum().sum()/1e6,sig_dig)
-    df.loc['co2_process_mill_t', label] = round(co2_process_t.sum().sum()/1e6,sig_dig)
-    df.loc['co2_dac_mill_t', label] = round(co2_dac_t.sum().sum()/1e6,sig_dig)
-    df.loc['co2_net', label] = round(co2_tot/1e6,sig_dig)
-    ########################################################################
+    co2_tot = df.loc[df.index[df.index.str.contains('co2 emissions')],label].sum().sum()
+    df.loc['net emissions', label] = round(co2_tot,sig_dig)
+    ###############################################################
     ########################################################################
 
 
