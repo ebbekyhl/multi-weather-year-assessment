@@ -31,6 +31,13 @@ plt.rcParams['axes.axisbelow'] = True
 plt.rcParams['legend.title_fontsize'] = fs
 plt.rcParams['legend.fontsize'] = fs
 
+preferred_order = pd.Index([
+                            "offwind",
+                            "onwind",
+                            "solar",
+                            "hydro",
+                        ])
+
 dyear = str(snakemake.config['scenario']['design_year'][0])
 
 def plot_lost_load(df):
@@ -49,6 +56,13 @@ def plot_lost_load(df):
 
 def plot_co2_balance(df):
     
+    # Read historical CO2 emissions levels
+    co2_totals = pd.read_csv('data/co2_totals.csv',index_col=0)
+    co2_tot = co2_totals.sum().sum()
+    percentages = np.arange(5)*2
+    co2_levels = percentages/100*co2_tot
+    #########################################################
+
     fig,ax = plt.subplots(figsize=(10,5))
     df_plot = df[dyear]
 
@@ -66,6 +80,10 @@ def plot_co2_balance(df):
     co2_net = df_plot.loc['net emissions']
 
     ax.scatter(co2_net.index,co2_net,color='k',marker='_',s=5,label='Net emissions')
+
+    for i in range(len(co2_levels)):
+        ax.axhline(co2_levels[i],color='grey',lw=0.5,alpha=0.5,ls='--')
+        ax.text(0.02*(ax.get_xlim()[1]-ax.get_xlim()[0]),co2_levels[i]+0.018*(ax.get_ylim()[1]-ax.get_ylim()[0]),str(int(percentages[i])) + '% CO2 1990', color='grey')
 
     ax.set_ylabel('CO2 [MtCO2/a]')
 
@@ -100,6 +118,10 @@ def plot_energy_mix(df):
     index_sorted = energy_shares_nz[energy_shares_nz.columns[0]].sort_values().index
 
     energy_shares_nz = energy_shares_nz.loc[index_sorted]
+
+    new_index = preferred_order.intersection(energy_shares_nz.index).append(energy_shares_nz.index.difference(preferred_order))
+
+    energy_shares_nz = energy_shares_nz.loc[new_index]
     
     #energy_shares_T = energy_shares_nz.T
 
@@ -139,3 +161,4 @@ if __name__ == "__main__":
     plot_energy_mix(df)
     plot_lost_load(df)
     plot_co2_balance(df)
+    # plot_return_period(df)

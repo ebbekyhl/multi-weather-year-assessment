@@ -2,7 +2,7 @@ import pypsa
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-
+import seaborn as sns
 from helper import override_component_attrs
 
 fs = 16
@@ -16,6 +16,7 @@ plt.rcParams['axes.axisbelow'] = True
 plt.rcParams['legend.title_fontsize'] = fs
 plt.rcParams['legend.fontsize'] = fs
 
+# lost load duration curves
 def plot_lost_load(networks_dict):
     fig,ax = plt.subplots(figsize=(10,5))
     lost_load_duration = []
@@ -37,6 +38,46 @@ def plot_lost_load(networks_dict):
                 fontsize=fs,
                 frameon = True)
 
+    return fig
+
+def plot_heatmap_time(networks_dict):
+    fig,ax = plt.subplots(figsize=(10,5))
+    
+    load_shedding = pd.DataFrame()
+    for label, filename in networks_dict.items():
+        overrides = override_component_attrs(snakemake.input.overrides)
+        n = pypsa.Network(filename, override_component_attrs=overrides)
+
+        load_shedding[label[1]] = n.generators_t.p[n.generators.query('carrier == "load_el"').index].sum(axis=1)/1e3 # GW
+     
+    sns.heatmap(load_shedding, cmap='summer_r',ax=ax,cbar_kws={'label': 'GW'})
+
+    y_dates = load_shedding.index.strftime('%b').unique()
+    ax.set_yticks(np.linspace(0,len(n.snapshots),12))
+    ax.set_yticklabels(labels=y_dates, rotation=30, ha='right')
+    ax.set_ylabel('')
+    
+    return fig
+
+def plot_heatmap_space(networks_dict):
+    fig,ax = plt.subplots(figsize=(5,10))
+    
+    load_shedding = pd.DataFrame()
+    for label, filename in networks_dict.items():
+        overrides = override_component_attrs(snakemake.input.overrides)
+        n = pypsa.Network(filename, override_component_attrs=overrides)
+
+        load_shedding[label[1]] = n.generators_t.p[n.generators.query('carrier == "load_el"').index].max(axis=0)/1e3 # GW
+     
+    sns.heatmap(load_shedding, cmap='summer_r',ax=ax,cbar_kws={'label': 'GW'})
+
+    load_shedding['index'] = load_shedding.index
+    y_ticklabels = load_shedding['index'].str.split(' low',1,expand=True)[0]
+    load_shedding.drop(columns='index',inplace=True)
+
+    ax.set_yticks(np.arange(len(load_shedding.index))+0.5)
+    ax.set_yticklabels(labels=y_ticklabels, rotation=0, ha='right')
+    
     return fig
 
 def assign_carriers(n):
@@ -70,14 +111,20 @@ def calculate_summary(n,label,df):
     df.loc['co2_cap', label] = co2_cap
     df.loc['co2_price',label] = co2_price
 
+    df.loc['peak_heat_demand_GW',label] = n.loads_t.p[n.loads.index[n.loads.carrier.str.contains('heat')]].sum(axis=1).max()/1e3
+
+    df.loc['annual_inflow_TWh',label] = n.storage_units_t.inflow.sum().sum()/1e6
+
     load_shedders_el = n.generators.query('carrier == "load_el"')
     lost_load_el = n.generators_t.p[load_shedders_el.index].sum().sum()
     df.loc['lost_load_el', label] = round(lost_load_el,sig_dig)
+    df.loc['capacity deficit el. GW',label] = round(n.generators_t.p[load_shedders_el.index].sum(axis=1).max()/1e3,sig_dig)
 
     load_shedders_heat = n.generators.query('carrier == "load_heat"')
     lost_load_heat = n.generators_t.p[load_shedders_heat.index].sum().sum()
     df.loc['lost_load_heat', label] = round(lost_load_heat,sig_dig)
-    
+    df.loc['capacity deficit heat GW',label] = round(n.generators_t.p[load_shedders_heat.index].sum(axis=1).max()/1e3,sig_dig)
+
     ###############################################################
     ######################## CO2 emissions ########################
     ###############################################################
@@ -206,7 +253,6 @@ def calculate_summary(n,label,df):
     ########################################################################
     ########################################################################
 
-
     return df
 
 def make_summaries(networks_dict,design_network):
@@ -280,5 +326,10 @@ if __name__ == "__main__":
     to_csv(df)
 
     fig = plot_lost_load(networks_dict)
-    
     fig.savefig(snakemake.output.lost_load_plot, bbox_inches = 'tight')
+
+    fig1 = plot_heatmap_time(networks_dict)
+    fig1.savefig(snakemake.output.load_shedding_heatmap_time, bbox_inches = 'tight')
+
+    fig2 = plot_heatmap_space(networks_dict)
+    fig2.savefig(snakemake.output.load_shedding_heatmap_space, bbox_inches = 'tight')

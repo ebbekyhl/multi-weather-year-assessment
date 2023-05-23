@@ -1,7 +1,7 @@
 configfile: "config.yaml"
 
 tres = config['model']['tres'] # temporal resolution of capacity-optimized networks
-hour = 'h' #'h' # or 'H'
+hour = 'h' #'h' or 'H'
 nodes = config['model']['nodes'] # number of nodes in the network
 co2 = config['model']['co2'] # co2 cap
 sectors = config['model']['sectors'] # sectors included
@@ -142,6 +142,8 @@ rule make_summary:
     output: 
         summary = RDIR + "csvs/summary.csv",
         lost_load_plot = RDIR + "graphs/lost_load_duration_curves.pdf",
+        load_shedding_heatmap_time = RDIR + "graphs/load_shedding_heatmap_time.pdf",
+        load_shedding_heatmap_space = RDIR + "graphs/load_shedding_heatmap_space.pdf",
     threads: 1
     resources: mem_mb=10000 # check jobinfo to see how much memory is used
     script: 'scripts/make_summary.py'

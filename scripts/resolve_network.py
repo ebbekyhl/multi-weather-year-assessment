@@ -239,14 +239,13 @@ if __name__ == "__main__":
 
         n = prepare_network(n, cf_solving)
 
-        n.objective = 0
+        n.objective = 1e10
 
         n = solve_network(n,
                           cf_solving=cf_solving,
                           solver_options=solver_options,
                           solver_dir=tmpdir)
 
-        if n.objective > 0:
-            n.export_to_netcdf(snakemake.output.network)
+        n.export_to_netcdf(snakemake.output.network)
 
     logger.info("Maximum memory usage: {}".format(mem.mem_usage))

@@ -34,31 +34,5 @@ if __name__ == "__main__":
     n_weather = pypsa.Network(weather_network, 
                                 override_component_attrs=overrides)
 
-    # fig,ax = plt.subplots(figsize=(10,5))
-    
-    # A = n.loads.index[n.loads.index.str.contains('heat')]
-    # B = n.loads_t.p_set.columns
-    # shared_indices = [i for i, item in enumerate(A) if item in B]
-    # print("Warning! ", n.loads.loc[A].drop(index=A[shared_indices]).index, " did not have any heat demand")
-    # loads = n.loads_t.p_set[A[shared_indices]].sum(axis=1)
-    
-    # #loads_w = n_weather.loads_t.p[n_weather.loads.index[n_weather.loads.index.str.contains('heat')]].sum(axis=1)
-    # ax.plot(loads,alpha=0.5,label='old')
-
     update_heat(n,n_weather)
     n.export_to_netcdf(snakemake.output.network)
-
-    # A = n.loads.index[n.loads.index.str.contains('heat')]
-    # B = n.loads_t.p_set.columns
-    # shared_indices = [i for i, item in enumerate(A) if item in B]
-    # print("Warning! ", n.loads.loc[A].drop(index=A[shared_indices]).index, " did not have any heat demand")
-    # loads = n.loads_t.p_set[A[shared_indices]].sum(axis=1)
-
-    # ax.plot(loads,alpha=0.5,label='new')
-    
-    # ax.legend(frameon=True)
-
-    # fig.savefig(
-    #             snakemake.output.plot_heat,
-    #             bbox_inches="tight"
-    #             )

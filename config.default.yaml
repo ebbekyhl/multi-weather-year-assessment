@@ -1,0 +1,33 @@
+logging_level: INFO
+
+results_dir: 'results/'
+run: 'run_3hour_test_CO2_price'
+
+model:
+  nodes: "37"
+  tres: "3"
+  co2: "0"
+  sectors: "T-H-B-I-A"
+
+scenario:
+  design_year: 
+  - 2013
+  weather_year:
+  - 2000
+  - 2013
+
+  generators_extendable: False
+  links_extendable: False
+  stores_extendable: False
+  
+  add_co2_price: True
+  custom_co2_price: False
+  co2_price: 500 # EUR/tCO2 (Only used if 'custom_co2_price' is set to True and 'add_co2_price' is also True)
+  
+  add_co2_lim: False
+  new_co2_lim: 0.05 # global co2 emissions constraint in percentage relative to 1990-levels
+  
+  hydroconstrained: False
+
+solving:
+  mem: 100000
