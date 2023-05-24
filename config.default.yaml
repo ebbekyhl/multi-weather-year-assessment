@@ -24,8 +24,8 @@ scenario:
   custom_co2_price: False
   co2_price: 500 # EUR/tCO2 (Only used if 'custom_co2_price' is set to True and 'add_co2_price' is also True)
   
-  add_co2_lim: False
-  new_co2_lim: 0.05 # global co2 emissions constraint in percentage relative to 1990-levels
+  add_co2_lim: False 
+  new_co2_lim: 0.05 # global co2 emissions constraint in percentage relative to 1990-levels (Only used if 'add_co2_lim' is set to True)
   
   hydroconstrained: False
 

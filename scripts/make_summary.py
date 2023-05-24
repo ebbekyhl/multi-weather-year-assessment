@@ -2,8 +2,10 @@ import pypsa
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import seaborn as sns
 from helper import override_component_attrs
+import yaml
 
 fs = 16
 plt.style.use('seaborn-ticks')
@@ -16,69 +18,32 @@ plt.rcParams['axes.axisbelow'] = True
 plt.rcParams['legend.title_fontsize'] = fs
 plt.rcParams['legend.fontsize'] = fs
 
-# lost load duration curves
-def plot_lost_load(networks_dict):
-    fig,ax = plt.subplots(figsize=(10,5))
-    lost_load_duration = []
-    for label, filename in networks_dict.items():
-        overrides = override_component_attrs(snakemake.input.overrides)
-        n = pypsa.Network(filename, override_component_attrs=overrides)
+with open('scripts/tech_colors.yaml') as file:
+    tech_colors = yaml.safe_load(file)['tech_colors']
+tech_colors['urban central gas CHP'] = tech_colors['gas']
+tech_colors['urban central gas CHP CC'] = tech_colors['gas']
+tech_colors['urban central solid biomass CHP'] = tech_colors['biomass']
+tech_colors['urban central solid biomass CHP CC'] = tech_colors['biomass']
+tech_colors['lost load el.'] = 'k'
+tech_colors['biogas to gas'] = tech_colors['biogas']
+tech_colors['process'] = tech_colors['process emissions']
+tech_colors['oil load'] = tech_colors['oil']
+tech_colors['agriculture machinery'] = 'k'
+tech_colors['dac'] = tech_colors['DAC']
 
-        lost_load = n.generators_t.p[n.generators.query('carrier == "load_el"').index].sum(axis=1)/1e3
-        ax.plot(np.arange(len(lost_load))*(8760/len(n.snapshots)),lost_load.sort_values(ascending=False),label=label[1])
+def plot_lost_load(n,ax,lost_load_duration,label):
+    lost_load = n.generators_t.p[n.generators.query('carrier == "load_el"').index].sum(axis=1)/1e3
+    ax.plot(np.arange(len(lost_load))*(8760/len(n.snapshots)),lost_load.sort_values(ascending=False),label=label[1])
+    lost_load_duration.append(len(lost_load[lost_load > 0.1])*(8760/len(n.snapshots)))
+    return ax,lost_load_duration
 
-        lost_load_duration.append(len(lost_load[lost_load > 0.1])*(8760/len(n.snapshots)))
-    
-    ax.set_ylabel('GW')
-    ax.set_xlabel('Hours')
-    ax.set_xlim([0,max(lost_load_duration)])
-    fig.legend(ncol=3,
-                bbox_to_anchor=(0.7, -0.02),
-                borderaxespad=0,
-                fontsize=fs,
-                frameon = True)
+def make_heatmap_time_df(n,load_shedding_t,label):
+    load_shedding_t[label[1]] = n.generators_t.p[n.generators.query('carrier == "load_el"').index].sum(axis=1)/1e3 # GW
+    return load_shedding_t
 
-    return fig
-
-def plot_heatmap_time(networks_dict):
-    fig,ax = plt.subplots(figsize=(10,5))
-    
-    load_shedding = pd.DataFrame()
-    for label, filename in networks_dict.items():
-        overrides = override_component_attrs(snakemake.input.overrides)
-        n = pypsa.Network(filename, override_component_attrs=overrides)
-
-        load_shedding[label[1]] = n.generators_t.p[n.generators.query('carrier == "load_el"').index].sum(axis=1)/1e3 # GW
-     
-    sns.heatmap(load_shedding, cmap='summer_r',ax=ax,cbar_kws={'label': 'GW'})
-
-    y_dates = load_shedding.index.strftime('%b').unique()
-    ax.set_yticks(np.linspace(0,len(n.snapshots),12))
-    ax.set_yticklabels(labels=y_dates, rotation=30, ha='right')
-    ax.set_ylabel('')
-    
-    return fig
-
-def plot_heatmap_space(networks_dict):
-    fig,ax = plt.subplots(figsize=(5,10))
-    
-    load_shedding = pd.DataFrame()
-    for label, filename in networks_dict.items():
-        overrides = override_component_attrs(snakemake.input.overrides)
-        n = pypsa.Network(filename, override_component_attrs=overrides)
-
-        load_shedding[label[1]] = n.generators_t.p[n.generators.query('carrier == "load_el"').index].max(axis=0)/1e3 # GW
-     
-    sns.heatmap(load_shedding, cmap='summer_r',ax=ax,cbar_kws={'label': 'GW'})
-
-    load_shedding['index'] = load_shedding.index
-    y_ticklabels = load_shedding['index'].str.split(' low',1,expand=True)[0]
-    load_shedding.drop(columns='index',inplace=True)
-
-    ax.set_yticks(np.arange(len(load_shedding.index))+0.5)
-    ax.set_yticklabels(labels=y_ticklabels, rotation=0, ha='right')
-    
-    return fig
+def make_heatmap_space_df(n,load_shedding_s,label):
+    load_shedding_s[label[1]] = n.generators_t.p[n.generators.query('carrier == "load_el"').index].max(axis=0)/1e3 # GW
+    return load_shedding_s
 
 def assign_carriers(n):
     if "carrier" not in n.lines:
@@ -197,7 +162,6 @@ def calculate_summary(n,label,df):
     ###############################################################
     ########################################################################
 
-
     ########################################################################
     ######################## Electricity generation ########################
     ########################################################################
@@ -242,10 +206,66 @@ def calculate_summary(n,label,df):
 
     add_dict = {'offwind-ac':'offwind',
                 'offwind-dc':'offwind',
-                'solar rooftop':'solar'}
+                'solar rooftop':'solar',
+                'load_el':'lost load el.'}
 
     power_generators_t_rn = power_generators_t.rename(columns=add_dict)
     df_power_generation = power_generators_t_rn.groupby(by=power_generators_t_rn.columns, axis=1).sum()
+    
+    #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    ### Plot
+    freq = 'd'
+    timescales = {'h':'hourly',
+                  'd':'daily',
+                  'w':'weekly',
+                  'm':'monthly'}
+    
+    carriers_list = list(n.carriers.index).copy()
+
+    df_plot = df_power_generation
+    
+    preferred_order = pd.Index([
+                            "onwind",
+                            "offwind",
+                            "solar",
+                            "hydro",
+                            "ror",
+                            ])
+    
+    new_index = preferred_order.intersection(df_plot.columns).append(df_plot.columns.difference(preferred_order))
+
+    df_plot = df_plot.T.loc[new_index].T
+
+    # full year
+    fig,ax = plt.subplots(figsize=(10,5))
+    df_plot_full_year = df_plot.rolling(8).mean()/1e3 # daily moving averages
+    df_plot_full_year.plot.area(ax=ax,
+                                stacked=True,
+                                color=[tech_colors[i] for i in df_plot_full_year.columns],lw=0,
+                                legend=False)
+    ax.set_ylabel('Electricity supply [GWh]')
+    fig.legend(bbox_to_anchor=(0.7, -0.15),
+                borderaxespad=0,
+                fontsize=fs,
+                frameon = True)
+    fig.savefig(snakemake.output.lost_load_plot[:-29] + 'electricity_supply_' + str(label[1]) + '.png', bbox_inches = 'tight',dpi=300)
+    
+    # critical period 
+    fig_critical_period,ax_critical_period = plt.subplots(figsize=(10,5))
+    df_critical_period = df_plot
+    df_critical_period.plot.area(ax=ax_critical_period,
+                                stacked=True,
+                                color=[tech_colors[i] for i in df_critical_period.columns],lw=0,
+                                legend=False)
+    ax_critical_period.set_ylabel('Electricity supply [GWh]')
+    ax_critical_period.set_xlim([pd.to_datetime('1/1/2013'),pd.to_datetime('2/15/2013')])
+    fig_critical_period.legend(bbox_to_anchor=(0.7, -0.15),
+                                borderaxespad=0,
+                                fontsize=fs,
+                                frameon = True)
+    fig_critical_period.savefig(snakemake.output.lost_load_plot[:-29] + 'electricity_supply_' + str(label[1]) + '_critical_period.png', bbox_inches = 'tight',dpi=300)
+    #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
     df_shares = df_power_generation.sum()/(df_power_generation.sum().sum())*100
 
     for ind in df_shares.index:
@@ -269,6 +289,12 @@ def make_summaries(networks_dict,design_network):
     for output in outputs:
         df[output] = pd.DataFrame(columns=columns, dtype=float)
 
+    fig_ll,ax_ll = plt.subplots(figsize=(10,5))
+    
+    ll_duration = []
+    load_shedding_t = pd.DataFrame()
+    load_shedding_s = pd.DataFrame()
+
     for label, filename in networks_dict.items():
         print('label: ', label)
         print('filename: ', filename)
@@ -282,6 +308,12 @@ def make_summaries(networks_dict,design_network):
 
         for output in outputs:
             df[output] = globals()["calculate_" + output](n, label, df[output])
+        
+        ####### PLOTTING
+        load_shedding_t = make_heatmap_time_df(n,load_shedding_t,label)
+        load_shedding_s = make_heatmap_space_df(n,load_shedding_s,label)
+        ax_ll, ll_duration = plot_lost_load(n,ax_ll,ll_duration,label)
+        ##################
 
     # Include design network results as reference
     print(df)
@@ -289,7 +321,30 @@ def make_summaries(networks_dict,design_network):
     for output in outputs:
         df[output] = globals()["calculate_" + output](n_design, ('design','design'), df[output])
 
-    return df
+    fig_heatmap_time,ax_heatmap_time = plt.subplots(figsize=(10,5))
+    sns.heatmap(load_shedding_t, cmap='summer_r',ax=ax_heatmap_time,cbar_kws={'label': 'GW'})
+    y_dates = load_shedding_t.index.strftime('%b').unique()
+    ax_heatmap_time.set_yticks(np.linspace(0,len(n.snapshots),12))
+    ax_heatmap_time.set_yticklabels(labels=y_dates, rotation=30, ha='right')
+    ax_heatmap_time.set_ylabel('')
+
+    fig_heatmap_space,ax_heatmap_space = plt.subplots(figsize=(5,10))
+    sns.heatmap(load_shedding_s, cmap='summer_r',ax=ax_heatmap_space,cbar_kws={'label': 'GW'})
+    load_shedding_s['index'] = load_shedding_s.index
+    y_ticklabels = load_shedding_s['index'].str.split(' low',1,expand=True)[0]
+    load_shedding_s.drop(columns='index',inplace=True)
+    ax_heatmap_space.set_yticks(np.arange(len(load_shedding_s.index))+0.5)
+    ax_heatmap_space.set_yticklabels(labels=y_ticklabels, rotation=0, ha='right')
+
+    ax_ll.set_ylabel('GW')
+    ax_ll.set_xlabel('Hours')
+    ax_ll.set_xlim([0,max(ll_duration)])
+    fig_ll.legend(ncol=3,
+                    bbox_to_anchor=(0.7, -0.02),
+                    borderaxespad=0,
+                    fontsize=fs,
+                    frameon = True)
+    return df, fig_ll, fig_heatmap_time, fig_heatmap_space
 
 def to_csv(df):
     for key in df:
@@ -321,15 +376,10 @@ if __name__ == "__main__":
     print(networks_dict)
 
     design_network = snakemake.input.design_network
-    df = make_summaries(networks_dict,design_network)
+    df, fig_ll, fig_heatmap_time, fig_heatmap_space = make_summaries(networks_dict,design_network)
 
     to_csv(df)
 
-    fig = plot_lost_load(networks_dict)
-    fig.savefig(snakemake.output.lost_load_plot, bbox_inches = 'tight')
-
-    fig1 = plot_heatmap_time(networks_dict)
-    fig1.savefig(snakemake.output.load_shedding_heatmap_time, bbox_inches = 'tight')
-
-    fig2 = plot_heatmap_space(networks_dict)
-    fig2.savefig(snakemake.output.load_shedding_heatmap_space, bbox_inches = 'tight')
+    fig_ll.savefig(snakemake.output.lost_load_plot, bbox_inches = 'tight')
+    fig_heatmap_time.savefig(snakemake.output.load_shedding_heatmap_time, bbox_inches = 'tight')
+    fig_heatmap_space.savefig(snakemake.output.load_shedding_heatmap_space, bbox_inches = 'tight')
