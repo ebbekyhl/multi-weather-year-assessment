@@ -1,13 +1,16 @@
 logging_level: INFO
 
 results_dir: 'results/'
-run: 'run_3hour_test_CO2_price'
+run: 'test'
 
-model:
-  nodes: "37"
-  tres: "3"
-  co2: "0"
+# Model specifications of the design model
+model: 
+  nodes: "37" # number of nodes
+  tres: "3" # temporal resolution
+  co2: "0" # 
   sectors: "T-H-B-I-A"
+# Ideally, this should refer to the PyPSA-Eur workflow as, if changed, we would need to run a new design scenario. 
+# Currently, this is not the case, and, thus, requires the user to already have the design scenario available.
 
 scenario:
   design_year: 
@@ -16,18 +19,29 @@ scenario:
   - 2000
   - 2013
 
-  generators_extendable: False
+  opts:
+    - hydro-solar-wind-heat # full model
+    # Define here the variable that should be dependent on the model weather year ("hydro", "solar", "wind", "heat"). 
+    # If not included, the variable will be calculated based on the design year (2013).
+
+  # Fix capacities (set the extension of the following components to "False")
+  generators_extendable: False # False = fixed capacity, True = the model can choose to build more 
   links_extendable: False
   stores_extendable: False
   
+  # Add CO2 price defined by the dual of the net-zero CO2 emissions constraint (if "custom_co2_price" is False) or defined exogenously
   add_co2_price: True
-  custom_co2_price: False
-  co2_price: 500 # EUR/tCO2 (Only used if 'custom_co2_price' is set to True and 'add_co2_price' is also True)
+
+  # Add CO2 price exogenously
+  custom_co2_price: False # False = CO2 price is based on the dual 
+  co2_price: 500 # EUR/tCO2 (only used if 'custom_co2_price' is True)
   
-  add_co2_lim: False 
+  # Add CO2 emissions limit
+  add_co2_lim: False # Only relevant if "add_co2_price" is False
   new_co2_lim: 0.05 # global co2 emissions constraint in percentage relative to 1990-levels (Only used if 'add_co2_lim' is set to True)
   
-  hydroconstrained: False
+  # Add seasonal limit on hydropower to resemble limited foresight
+  hydroconstrained: False # If True, hydropower is constrained by its SOC to stay within [5%,95%] quantiles of historical data
 
 solving:
-  mem: 100000
+  mem: 25000 # memory allocated in solving the dispatch optimization
