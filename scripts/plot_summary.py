@@ -64,22 +64,22 @@ def plot_co2_balance(df):
     #########################################################
 
     fig,ax = plt.subplots(figsize=(10,5))
+
     df_plot = df[dyear]
 
-    df_plot['design'] = df['design'].loc[df_plot.index]
-
+    df_plot[('design','design')] = df['design'].loc[df_plot.index]
+    
     df_co2 = df_plot.loc[df_plot.index[df_plot.index.str.contains('co2 emissions')]]
     df_co2['carrier'] = df_co2.index
     df_co2['carrier'] = df_co2.carrier.str.split('co2 emissions ',1,expand=True)[1]
-
     df_co2.drop(columns='carrier').T.plot.bar(ax=ax,
                                             stacked=True,
                                             color=[tech_colors[t] for t in list(df_co2.carrier)],
                                             legend=False)
-
     co2_net = df_plot.loc['net emissions']
 
-    ax.scatter(co2_net.index,co2_net,color='k',marker='_',s=5,label='Net emissions')
+    # ax.scatter(co2_net.index,co2_net,color='k',marker='_',s=5,label='Net emissions')
+    ax.scatter(np.arange(len(co2_net.index)),co2_net,color='k',marker='_',s=5,label='Net emissions')
 
     for i in range(len(co2_levels)):
         ax.axhline(co2_levels[i],color='grey',lw=0.5,alpha=0.5,ls='--')
@@ -152,11 +152,12 @@ if __name__ == "__main__":
             'make_summary',
             design_year="2013", 
             weather_year="2008",
+            opts = ''
         )
 
     df = pd.read_csv(snakemake.input.summary_csv,
                 index_col=list(range(1)),
-                header=list(range(2)))
+                header=list(range(3)))
 
     plot_energy_mix(df)
     plot_lost_load(df)

@@ -9,6 +9,13 @@ def update_renewables(n,n_weather):
                 'onwind','offwind-ac','offwind-dc',
                 'ror']
 
+    dic = {'solar':'solar',
+           'solar rooftop':'solar',
+           'onwind':'wind',
+           'offwind-ac':'wind',
+           'offwind-dc':'wind',
+           'ror':'hydro'}
+
     ###################################
     ### Update VRE capacity factors ###
     ###################################
@@ -18,7 +25,9 @@ def update_renewables(n,n_weather):
         df_generators_t = n.generators_t.p_max_pu.copy()
         df_generators_t.loc[df_generators_t.index,n.generators.query('carrier == @gen').index] = new_CF
         
-        n.generators_t.p_max_pu = df_generators_t
+        if dic[gen] in snakemake.wildcards.opts:
+            print('correcting ' + gen)
+            n.generators_t.p_max_pu = df_generators_t
 
     ###################################
     ## Update hydro reservoir inflow ##
@@ -32,7 +41,9 @@ def update_renewables(n,n_weather):
     df_hydro_t = n.storage_units_t.inflow
     df_hydro_t.loc[df_hydro_t.index,A[shared_indices]] = old_inflow[A[shared_indices]]
 
-    n.storage_units_t.inflow = df_hydro_t
+    if 'hydro' in snakemake.wildcards.opts:
+        print('correcting hydro')
+        n.storage_units_t.inflow = df_hydro_t
 
     return n 
 

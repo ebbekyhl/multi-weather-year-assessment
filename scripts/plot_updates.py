@@ -88,9 +88,10 @@ if __name__ == "__main__":
         "results_dir"
     ]
     + snakemake.config["run"]
-   + "/prenetworks/base_n"+ nodes + "_" + tres + f"h_renewables_dy{design_year}_wy{weather_year}_heat.nc"
+   + "/prenetworks/base_n"+ nodes + "_" + tres + f"h_renewables_dy{design_year}_wy{weather_year}_{opts}_heat.nc"
     for design_year in snakemake.config["scenario"]["design_year"]
     for weather_year in snakemake.config["scenario"]["weather_year"]
+    for opts in snakemake.config["scenario"]["opts"]
     }
 
     print(networks_dict)

@@ -34,5 +34,7 @@ if __name__ == "__main__":
     n_weather = pypsa.Network(weather_network, 
                                 override_component_attrs=overrides)
 
-    update_heat(n,n_weather)
+    if 'heat' in snakemake.wildcards.opts:
+        print('correcting heat demand')
+        update_heat(n,n_weather)
     n.export_to_netcdf(snakemake.output.network)

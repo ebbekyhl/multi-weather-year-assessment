@@ -33,16 +33,16 @@ tech_colors['dac'] = tech_colors['DAC']
 
 def plot_lost_load(n,ax,lost_load_duration,label):
     lost_load = n.generators_t.p[n.generators.query('carrier == "load_el"').index].sum(axis=1)/1e3
-    ax.plot(np.arange(len(lost_load))*(8760/len(n.snapshots)),lost_load.sort_values(ascending=False),label=label[1])
+    ax.plot(np.arange(len(lost_load))*(8760/len(n.snapshots)),lost_load.sort_values(ascending=False),label=label[1:])
     lost_load_duration.append(len(lost_load[lost_load > 0.1])*(8760/len(n.snapshots)))
     return ax,lost_load_duration
 
 def make_heatmap_time_df(n,load_shedding_t,label):
-    load_shedding_t[label[1]] = n.generators_t.p[n.generators.query('carrier == "load_el"').index].sum(axis=1)/1e3 # GW
+    load_shedding_t[label[1:]] = n.generators_t.p[n.generators.query('carrier == "load_el"').index].sum(axis=1)/1e3 # GW
     return load_shedding_t
 
 def make_heatmap_space_df(n,load_shedding_s,label):
-    load_shedding_s[label[1]] = n.generators_t.p[n.generators.query('carrier == "load_el"').index].max(axis=0)/1e3 # GW
+    load_shedding_s[label[1:]] = n.generators_t.p[n.generators.query('carrier == "load_el"').index].max(axis=0)/1e3 # GW
     return load_shedding_s
 
 def assign_carriers(n):
@@ -248,7 +248,7 @@ def calculate_summary(n,label,df):
                 borderaxespad=0,
                 fontsize=fs,
                 frameon = True)
-    fig.savefig(snakemake.output.lost_load_plot[:-29] + 'electricity_supply_' + str(label[1]) + '.png', bbox_inches = 'tight',dpi=300)
+    fig.savefig(snakemake.output.lost_load_plot[:-29] + 'electricity_supply_' + str(label[1:]) + '.png', bbox_inches = 'tight',dpi=300)
     
     # critical period 
     fig_critical_period,ax_critical_period = plt.subplots(figsize=(10,5))
@@ -263,7 +263,7 @@ def calculate_summary(n,label,df):
                                 borderaxespad=0,
                                 fontsize=fs,
                                 frameon = True)
-    fig_critical_period.savefig(snakemake.output.lost_load_plot[:-29] + 'electricity_supply_' + str(label[1]) + '_critical_period.png', bbox_inches = 'tight',dpi=300)
+    fig_critical_period.savefig(snakemake.output.lost_load_plot[:-29] + 'electricity_supply_' + str(label[1:]) + '_critical_period.png', bbox_inches = 'tight',dpi=300)
     #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
     df_shares = df_power_generation.sum()/(df_power_generation.sum().sum())*100
@@ -281,7 +281,7 @@ def make_summaries(networks_dict,design_network):
               ]
 
     columns = pd.MultiIndex.from_tuples(
-        networks_dict.keys(), names=["design_year","weather_year"]
+        networks_dict.keys(), names=["design_year","weather_year","opts"]
     )
 
     df = {}
@@ -319,7 +319,7 @@ def make_summaries(networks_dict,design_network):
     print(df)
     n_design = pypsa.Network(design_network,override_component_attrs=overrides)
     for output in outputs:
-        df[output] = globals()["calculate_" + output](n_design, ('design','design'), df[output])
+        df[output] = globals()["calculate_" + output](n_design, ('design','design','design'), df[output])
 
     fig_heatmap_time,ax_heatmap_time = plt.subplots(figsize=(10,5))
     sns.heatmap(load_shedding_t, cmap='summer_r',ax=ax_heatmap_time,cbar_kws={'label': 'GW'})
@@ -357,6 +357,7 @@ if __name__ == "__main__":
             'make_summary',
             design_year="2013", 
             weather_year="2008",
+            opts = "",
         )
     
     overrides = override_component_attrs(snakemake.input.overrides)
@@ -364,13 +365,14 @@ if __name__ == "__main__":
     tres = snakemake.config['model']['tres']
 
     networks_dict = {
-    (design_year, weather_year): snakemake.config[
+    (design_year, weather_year, opts): snakemake.config[
         "results_dir"
     ]
     + snakemake.config["run"]
-   + "/postnetworks/resolved_n"+ nodes + "_" + tres + f"h_dy{design_year}_wy{weather_year}.nc"
+   + "/postnetworks/resolved_n"+ nodes + "_" + tres + f"h_dy{design_year}_wy{weather_year}_{opts}.nc"
     for design_year in snakemake.config["scenario"]["design_year"]
     for weather_year in snakemake.config["scenario"]["weather_year"]
+    for opts in snakemake.config["scenario"]["opts"]
     }
 
     print(networks_dict)
