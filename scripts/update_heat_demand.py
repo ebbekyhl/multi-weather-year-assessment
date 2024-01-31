@@ -6,15 +6,9 @@ from helper import override_component_attrs
 def update_heat(n,n_weather,weather_year):
     heat_loads = n.loads_t.p_set.columns[n.loads_t.p_set.columns.str.contains('heat')]
     new_heat_p_set = n_weather.loads_t.p_set[heat_loads]
-
-    filename_design_year = "../data/modeled_heat_demands/heat_demand_total_elec_wy2013_s370_37.nc"
-    filename_new_year = "../data/modeled_heat_demands/heat_demand_total_elec_wy" + weather_year + "_s370_37.nc"
-    modeled_heat_demand_design_year = xr.open_dataarray(filename_design_year, engine="netcdf4").to_pandas()
-    modeled_heat_demand_new_year = xr.open_dataarray(filename_new_year, engine="netcdf4").to_pandas()
-    interannual_variability_factor = modeled_heat_demand_design_year.sum().sum()/modeled_heat_demand_new_year.sum().sum()
             
     df_loads_p_set = n.loads_t.p_set
-    df_loads_p_set.loc[df_loads_p_set.index,heat_loads] = new_heat_p_set*interannual_variability_factor
+    df_loads_p_set.loc[df_loads_p_set.index,heat_loads] = new_heat_p_set
     
     n.loads_t.p_set = df_loads_p_set
 
