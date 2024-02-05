@@ -108,18 +108,23 @@ rule add_co2_price:
     resources: mem_mb=10000 
     script: 'scripts/add_co2_price.py'
 
-# rule change_temporal_resolution: reoptimization should be carried out in (preferably) hourly res!
-#
-# # script that downsamples from x-hourly to 1-hourly
-#
-#
+
+rule split_horizon:
+    input:
+        network =  PNDIR + "base_n"+ nodes + "_" + tres + "h_renewables_dy{design_year}_wy{weather_year}_{opts}_heat_capacitylock_co2price.nc"
+    output: 
+        network =  PNDIR + "base_n"+ nodes + "_" + tres + "h_renewables_dy{design_year}_wy{weather_year}_{opts}_heat_capacitylock_co2price_split.nc"
+    threads: 1
+    resources: mem_mb=10000 
+    script: 'scripts/add_co2_price.py'
+    
 
 rule resolve_network:
     input:
         overrides = "data/override_component_attrs",
         plot_hydro = RDIR + "graphs/inflow_hydro.pdf",
         config= RDIR + 'configs/config.yaml',
-        network = PNDIR + "base_n"+ nodes + "_" + tres + "h_renewables_dy{design_year}_wy{weather_year}_{opts}_heat_capacitylock_co2price.nc" #_capacitylock_co2price.nc",
+        network = PNDIR + "base_n"+ nodes + "_" + tres + "h_renewables_dy{design_year}_wy{weather_year}_{opts}_heat_capacitylock_co2price_split.nc"
     output: 
         network = RDIR + "postnetworks/resolved_n"+ nodes + "_" + tres +"h_dy{design_year}_wy{weather_year}_{opts}.nc"
     log:

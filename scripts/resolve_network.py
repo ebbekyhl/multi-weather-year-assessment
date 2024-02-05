@@ -77,11 +77,6 @@ def solve_network(n, cf_solving, solver_options, **kwargs):
     return n
 
 def read_dispatch(country):
-    # Path must be changed to an external repository!
-    historical_dispatch = pd.read_csv('hydro_dispatch/hydro_res_dispatch_' + country + '_ENTSOE.csv',index_col=0)
-    
-    historical_dispatch.index = pd.to_datetime(historical_dispatch.index,utc=True)
-    historical_dispatch = historical_dispatch.resample('h').sum()
     df = pd.DataFrame(index=pd.date_range('1/1/2013','1/1/2014',freq='h',inclusive='left'))
     
     df1 = pd.DataFrame(historical_dispatch)
@@ -91,7 +86,6 @@ def read_dispatch(country):
         df1 = df1.drop(index_to_drop[i])
     df1['year'] = df1.index.year
     for year in df1.index.year.unique():
-        #print(year)
         df1_year = df1.query('year == @year')
         df1_year = df1_year[~df1_year.index.duplicated(keep='first')]
 
@@ -100,8 +94,6 @@ def read_dispatch(country):
                                       freq='h',tz='UTC')[0:-1]
 
         missing_dates = year_datetime.difference(df1_year.index)
-        #if len(missing_dates) > 0:
-        #    print('Imputing ',len(missing_dates), ' missing timestamp(s)!')
         add_data = pd.DataFrame(columns=['Hydro Water Reservoir','year'],index=missing_dates)
         add_data['year'] = missing_dates.year.values
         df1_year = pd.concat([df1_year,add_data]).sort_index()
@@ -116,74 +108,137 @@ def read_dispatch(country):
         
     return df
 
-def add_hydropower_constraint(n):
+def read_hydro_soc(country, historical_soc):
+    df_soc = pd.DataFrame(index=pd.date_range('1/1/2015','1/1/2016',freq='w',inclusive='left'))
+    df1 = pd.DataFrame(historical_soc[country])
 
-    constraint_countries = ['AT', 'BA', 'BE', 'BG', 'CH', 'CZ', 'DE', 
-                            'ES', 'FI', 'FR', 'GR', 'HR', 'HU', 
-                            'IT', 'LU', 'LV', 'ME', 'MK', 'NO', 'SE', 'SI','GB']
-    df_min = {}
-    df_max = {}
+    # dropping years that do not have sufficient data reported
+    minimum_no_of_weeks = 40
+    years_to_drop = df1.index.year.value_counts()[df1.index.year.value_counts() < minimum_no_of_weeks].index
+    index_to_drop = [df1.index[df1.index.year == years_to_drop[i]] for i in range(len(years_to_drop))] 
+    for i in range(len(index_to_drop)):
+        df1 = df1.drop(index_to_drop[i])
+    
+    # indexing by year
+    df1['year'] = df1.index.year
+    for year in df1.index.year.unique():
+        print(year)
+        df1_year = df1.query('year == @year')
+        df1_year = df1_year[~df1_year.index.duplicated(keep='first')]
+        df_soc[year] = df1_year.T.iloc[0].values[0:52]
+    df_soc = df_soc.interpolate() # impute missing values using linear interpolation
+
+    return df_soc
+
+def add_hydro_constraint_soc(n):
+    tres_factor = 8760/len(n.snapshots)
+    # enforce model to reduce its deviation from the historical soc median
+    # Read historical data
+    # (Path must be changed to an external repository)
+    historical_dispatch = pd.read_csv('data/hydro/hydro_res_dispatch_' + country + '_ENTSOE.csv',index_col=0)
+    historical_dispatch.index = pd.to_datetime(historical_dispatch.index,utc=True)
+    historical_dispatch = historical_dispatch.resample('h').sum()
+
+    historical_soc = pd.read_csv('data/hydro/hydro_res_soc_ENTSOE.csv',index_col=0)
+    historical_soc.index = pd.to_datetime(historical_soc.index,utc=True)
+    
+    constraint_countries = historical_soc.columns
+    
+    ######################## Calculate median SOC ############################
+    soc_median = {}
+    p_median = {}
     for c in constraint_countries:
-        if c == 'GB':
-            df = read_dispatch('UK')
-        else:
-            df = read_dispatch(c)
-        df_min[c] = df.quantile(0.05,axis=1).resample('m').sum() # <------------------------- Define lower limit
-        df_max[c] = df.quantile(0.95,axis=1).resample('m').sum() # <------------------------- Define upper limit
 
+        df_soc = read_hydro_soc(c, historical_soc) # historical state-of-charge (filling level) of hydropower reservoirs [MWh]
+
+        p = read_dispatch(c) # historical dispatch from hydropower reservoires acc. to ENTSO-E [MWh]
+
+        df_median = df_soc.median(axis=1) # calculate the median SOC
+        df_median_added = pd.Series(df_median.values[0],index=[df_median.index[-1] + pd.Timedelta('1w')])
+        df_median_collect = pd.concat([df_median,df_median_added])
+        df_median_collect = df_median_collect.groupby(df_median_collect.index.week).sum()
+
+        df_min = df_soc.min(axis=1) # calculate the min SOC
+        df_min_added = pd.Series(df_min.values[0],index=[df_min.index[-1] + pd.Timedelta('1w')])
+        df_min_collect = pd.concat([df_min,df_min_added])
+        df_min_collect = df_min_collect.groupby(df_min_collect.index.week).sum()
+
+        df_max = df_soc.max(axis=1) # calculate the max SOC
+        df_max_added = pd.Series(df_max.values[0],index=[df_max.index[-1] + pd.Timedelta('1w')])
+        df_max_collect = pd.concat([df_max,df_max_added])
+        df_max_collect = df_max_collect.groupby(df_max_collect.index.week).sum()
+        
+        soc_median[c] = df_median_collect # median SOC for country c
+        soc_max[c] = df_max_collect # max SOC for country c
+        soc_min[c] = df_min_collect # min SOC for country c
+        p_median[c] = p.median(axis=1) # median dispatch for country c
+
+    # hydropower in PyPSA-Eur
     hydro = n.storage_units.query('carrier == "hydro"')
     hydro_units = hydro.index
+    # find countries with hydropower that have data available from ENTSO-E (otherwise, we cannot impose a constraint)
     hydro_units_constrained = []
     for c in constraint_countries:
         hydro_units_constrained.append(list(hydro_units[hydro_units.str.contains(c)]))
     hydro_units_constrained = [item for sublist in hydro_units_constrained for item in sublist]
     
+    # loop over bus "i" containing hydropower with historical data available
     for i in hydro_units_constrained:
-        if hydro.loc[i].max_hours > 6:
-            ######################## READ HISTORICAL DISPATCH DATA ############################
-            country = i[0:2]
-            country_capacity = hydro.loc[hydro.index[hydro.index.str.contains(country)]].p_nom.sum()
-            nodal_share = n.storage_units.loc[i].p_nom/country_capacity
-            tres_factor = 8760/len(n.snapshots)
-            limit_lower_series = nodal_share*df_min[country]/tres_factor
-            limit_upper = list(nodal_share*df_max[country]/tres_factor)
-            
-            # Scale according to inflow
-            inflow = n.storage_units_t.inflow[i].sum()
-            
-            if sum(limit_lower_series) > inflow:
-                print('Scaling according to inflow')
-                limit_lower_series *= inflow/sum(limit_lower)
-                
-            limit_lower = list(limit_lower_series)
+        country = i[0:2]
+
+        # total hydropower capacity in country
+        country_capacity = hydro.loc[hydro.index[hydro.index.str.contains(country)]].p_nom.sum()
         
-            # BELOW LINES SHOULD BE UPDATED ACCORDING TO PYPSA VERSION!
-            p = get_var(n, 'StorageUnit', 'p_dispatch')
-            lhs_var = p[i]
-            ############################ DEFINE LOWER LIMIT ###################################
-            # LHS 1
-            lhs1 = linexpr((1, lhs_var)).groupby(p.index.month).apply(join_exprs)
+        # if countries have multiple buses, we need to split the historical data (which is aggregated by country) 
+        # by hydropower bus. We do this by weighting according to the nominal hydropower capacity.
+        nodal_share = n.storage_units.loc[i].p_nom/country_capacity
+        
+        min_series = nodal_share*soc_min[country] # capacity-weighted min SOC
+        median_series = nodal_share*soc_median[country] # capacity-weighted median SOC
+        max_series = nodal_share*soc_max[country] # capacity-weighted max SOC 
 
-            # RHS 1
-            lower_limit = pd.DataFrame(limit_lower, index=np.arange(1,13), columns=['hydro'])
-            rhs1 = lower_limit['hydro'] 
-            define_constraints(n, lhs1, '>', rhs1, 'StorageUnit', 'hydro lower limit constraint ' + i)
-            
-            ########################### DEFINE UPPER LIMIT ####################################
-            # LHS 2
-            lhs2 = linexpr((1, lhs_var)).groupby(p.index.month).apply(join_exprs)
+        ######################## SCALE CONSTRAINT ACC. TO INFLOW ############################
+        inflow = n.storage_units_t.inflow[i]
 
-            # RHS 2
-            upper_limit = pd.DataFrame(limit_upper, index=np.arange(1,13), columns=['hydro'])
-            rhs2 = upper_limit['hydro'] 
-            define_constraints(n, lhs2, '<', rhs2, 'StorageUnit', 'hydro upper limit constraint ' + i)
+        A = inflow # inflow in PyPSA-Eur network
+        B = nodal_share*p_median # capacity-weighted hydropower production from ENTSO-E
 
-        else:
-            print('hydro unit ', i, ' is attributed with max hours = 6 which already constrains the seasonal hydropower operation.')
+        # scale SOC constraint
+        scaling = A.sum()/B.sum()
+        # median_series *= scaling 
+
+        max_series *= scaling
+
+        # if the available inflow in the PyPSA-Eur network is lower than the historical level, 
+        # we need to relax the requirement for the minimum SOC level:
+        if B.sum() > A.sum(): 
+            min_series *= scaling
+
+        minimum = list(min_series)
+        # median = list(median_series)
+        maximum = list(max_series)
+    
+        ########################## DEFINE LEFT HAND SIDE ###################################
+        # BELOW LINES SHOULD BE UPDATED ACCORDING TO PYPSA VERSION!
+        soc = get_var(n, 'StorageUnit', 'state_of_charge')
+        lhs_var = soc[i]
+        lhs = linexpr((1, lhs_var)).groupby(soc.index.week).apply(join_exprs)
+
+        ############################ DEFINE LOWER LIMIT ###################################
+        # RHS 1
+        lower = pd.DataFrame(minimum, index=np.arange(1,13), columns=['hydro_soc']) 
+        rhs1 = lower['hydro_soc']*(168/tres_factor) # since "lhs" is the sum of SOC for one week, we scale the rhs as well
+        define_constraints(n, lhs, '>', rhs1, 'StorageUnit', 'hydro soc lower limit constraint ' + i)
+        
+        ########################### DEFINE UPPER LIMIT ####################################
+        # RHS 2
+        upper = pd.DataFrame(maximum, index=np.arange(1,13), columns=['hydro_soc'])
+        rhs2 = upper['hydro_soc']*(168/tres_factor) # since "lhs" is the sum of SOC for one week, we scale the rhs as well
+        define_constraints(n, lhs, '<', rhs2, 'StorageUnit', 'hydro soc upper limit constraint ' + i)
 
 def extra_functionality(n, snapshots):
     if snakemake.config['scenario']["hydroconstrained"]:
-        add_hydropower_constraint(n)
+        add_hydropower_constraint_soc(n)
         
 if __name__ == "__main__":
     if 'snakemake' not in globals():
@@ -225,21 +280,20 @@ if __name__ == "__main__":
                     }
 
         cf_solving = {'formulation': 'kirchhoff',
-                'clip_p_max_pu': 1.e-2,
-                #'load_shedding': False,
-                'noisy_costs': True,
-                'skip_iterations': True,
-                'track_iterations': False,
-                'min_iterations': 4,
-                'max_iterations': 6,
-                'keep_shadowprices': ['Bus', 'Line', 'Link', 'Transformer', 
-                                    'GlobalConstraint', 'Generator', 
-                                    'Store', 'StorageUnit']
-                }
+                    'clip_p_max_pu': 1.e-2,
+                    'noisy_costs': True,
+                    'skip_iterations': True,
+                    'track_iterations': False,
+                    'min_iterations': 4,
+                    'max_iterations': 6,
+                    'keep_shadowprices': ['Bus', 'Line', 'Link', 'Transformer', 
+                                        'GlobalConstraint', 'Generator', 
+                                        'Store', 'StorageUnit']
+                    }
 
         n = prepare_network(n, cf_solving)
 
-        n.objective = 1e10
+        # n.objective = 1e10
 
         n = solve_network(n,
                           cf_solving=cf_solving,
