@@ -111,13 +111,14 @@ rule add_co2_price:
 
 rule split_horizon:
     input:
+        overrides = "data/override_component_attrs",
         network =  PNDIR + "base_n"+ nodes + "_" + tres + "h_renewables_dy{design_year}_wy{weather_year}_{opts}_heat_capacitylock_co2price.nc"
     output: 
         network =  PNDIR + "base_n"+ nodes + "_" + tres + "h_renewables_dy{design_year}_wy{weather_year}_{opts}_heat_capacitylock_co2price_split.nc"
     threads: 1
     resources: mem_mb=10000 
-    script: 'scripts/add_co2_price.py'
-    
+    script: 'scripts/split_horizon.py'
+
 
 rule resolve_network:
     input:

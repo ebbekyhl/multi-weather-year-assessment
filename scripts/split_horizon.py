@@ -102,12 +102,20 @@ if __name__ == "__main__":
     overrides = override_component_attrs(snakemake.input.overrides)
     n = pypsa.Network(snakemake.input.network)
 
-    wyears = [weather_year-1, weather_year]
-    networks = {}
-    for wyear in wyears:
-        networks[wyear] = pypsa.Network("networks/networks_n37_3h/elec_wy1960" + str(wyear) + "_s370_37_lv1.0__Co2L0-3h-T-H-B-I-A-solar+p3-dist1_2050.nc")
+    if snakemake.config['scenario']['split_horizon'] and weather_year > 1960:
+        
+        wyears = [weather_year-1, weather_year]
 
-    if snakemake.config['scenario']['split_horizon']:
+        config = snakemake.config
+        nodes = config["model"]["nodes"]
+        tres = config["model"]["tres"]
+        co2_lvl = config["model"]["co2"]
+        sectors = config["model"]["sectors"]
+
+        networks = {}
+        for wyear in wyears:
+            networks[wyear] = pypsa.Network("networks/networks_n37_" + tres + "h/elec_wy" + str(wyear) + "_s370_" + nodes + "_lv1.0__Co2L" + co2_lvl + "-" + tres + "h-" + sectors + "-solar+p3-dist1_2050.nc")
+
         split_horizon(n, networks, weather_year)
 
     n.export_to_netcdf(snakemake.output.network)
