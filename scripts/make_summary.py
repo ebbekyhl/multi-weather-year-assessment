@@ -277,7 +277,7 @@ def calculate_summary(n,label,df):
 
     return df
 
-def make_summaries(networks_dict,design_network):
+def make_summaries(networks_dict) #,design_network):
     outputs = [
                 "summary",
               ]
@@ -318,10 +318,10 @@ def make_summaries(networks_dict,design_network):
         ##################
 
     # Include design network results as reference
-    print(df)
-    n_design = pypsa.Network(design_network,override_component_attrs=overrides)
-    for output in outputs:
-        df[output] = globals()["calculate_" + output](n_design, ('design','design','design'), df[output])
+    #print(df)
+    #n_design = pypsa.Network(design_network,override_component_attrs=overrides)
+    # for output in outputs:
+    #     df[output] = globals()["calculate_" + output](n_design, ('design','design','design'), df[output])
 
     fig_heatmap_time,ax_heatmap_time = plt.subplots(figsize=(10,5))
     sns.heatmap(load_shedding_t, cmap='summer_r',ax=ax_heatmap_time,cbar_kws={'label': 'GW'})
@@ -379,8 +379,8 @@ if __name__ == "__main__":
 
     print(networks_dict)
 
-    design_network = snakemake.input.design_network
-    df, fig_ll, fig_heatmap_time, fig_heatmap_space = make_summaries(networks_dict,design_network)
+    #design_network = snakemake.input.design_network
+    df, fig_ll, fig_heatmap_time, fig_heatmap_space = make_summaries(networks_dict) #,design_network)
 
     to_csv(df)
 

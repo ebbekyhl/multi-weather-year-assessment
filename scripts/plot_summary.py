@@ -160,6 +160,6 @@ if __name__ == "__main__":
                 header=list(range(3)))
 
     plot_energy_mix(df)
-    plot_lost_load(df)
-    plot_co2_balance(df)
+    # plot_lost_load(df)
+    # plot_co2_balance(df)
     # plot_return_period(df)
