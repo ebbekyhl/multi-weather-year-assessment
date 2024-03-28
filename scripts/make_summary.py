@@ -277,7 +277,7 @@ def calculate_summary(n,label,df):
 
     return df
 
-def make_summaries(networks_dict) #,design_network):
+def make_summaries(networks_dict): #,design_network):
     outputs = [
                 "summary",
               ]

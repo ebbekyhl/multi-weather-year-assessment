@@ -69,7 +69,10 @@ def freeze_network(n):
     print(n.generators.p_nom_extendable[0:5])
 
     # lines
-    n.lines.s_nom_extendable = False
+    lines = n.lines
+    lines.loc[lines.index, "s_nom"] = lines.s_nom_opt.values
+    lines.loc[lines.index, "s_nom_extendable"] = False
+    n.lines = lines
     print(n.lines.s_nom_extendable[0:5])
 
     # links

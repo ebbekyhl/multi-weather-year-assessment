@@ -9,8 +9,8 @@ dyear = str(config['scenario']['design_year'][0]) # design year
 
 RDIR = config['results_dir'] + config['run'] + '/' # results directory
 PNDIR = config['results_dir'] + config['run'] + '/prenetworks/' # pre-networks directory
-CNDIR = 'networks/networks_n' + nodes + '_' + tres + 'h/' # capacity-optimized networks directory
-        
+WNDIR = 'networks/networks_n37_3h/' # weather networks directory
+CNDIR = 'networks/sensitivity_transmission/' # capacity-optimized networks directory
 
 wildcard_constraints:
     design_year="[0-9]+m?",
@@ -23,7 +23,7 @@ rule all:
     
 rule resolve_all_networks:
     input:
-        expand(RDIR + "postnetworks/resolved_n"+ nodes + "_" + tres +"h_dy{design_year}_wy{weather_year}_{opts}.nc",
+        expand(RDIR + "postnetworks/resolved_n"+ nodes + "_" + tres +"h_dy{design_year}_wy{weather_year}_{opts}_lv{lvl}.nc",
                **config['scenario'])
 
 
@@ -36,63 +36,44 @@ rule copy_config:
 
 rule update_network:
     input:
-        design_network = CNDIR + "elec_wy{design_year}_s370_" + nodes + "_lv1.0__Co2L" + co2 + "-" + tres + hour + "-" + sectors + "-solar+p3-dist1_2050.nc",
-        weather_network = CNDIR + "elec_wy{weather_year}_s370_" + nodes + "_lv1.0__Co2L" + co2 + "-" + tres + hour + "-" + sectors + "-solar+p3-dist1_2050.nc",
+        design_network = CNDIR + "elec_wy{design_year}_s370_" + nodes + "_lv{lvl}__Co2L" + co2 + "-" + tres + hour + "-" + sectors + "-solar+p3-dist1_2050.nc",
+        weather_network = WNDIR + "elec_wy{weather_year}_s370_" + nodes + "_lv1.0__Co2L" + co2 + "-" + tres + hour + "-" + sectors + "-solar+p3-dist1_2050.nc",
         overrides = "data/override_component_attrs",
     output: 
-        network = PNDIR + "base_n" + nodes + "_" + tres + "h_updated_dy{design_year}_wy{weather_year}_{opts}.nc",
+        network = PNDIR + "base_n" + nodes + "_" + tres + "h_updated_dy{design_year}_wy{weather_year}_{opts}_lv{lvl}.nc",
     threads: 1
     resources: mem_mb=10000 
     script: 'scripts/update_network.py'
 
-# rule plot_updated_renewable_profiles:
-#     input:
-#         overrides = "data/override_component_attrs",
-#         design_network = PNDIR + "base_n" + nodes + "_" + tres + "h_dy" + dyear + ".nc", 
-#         networks=expand(
-#                         PNDIR + "base_n" + nodes + "_" + tres + "h_renewables_dy{design_year}_wy{weather_year}_{opts}_heat.nc",
-#                         **config['scenario']
-#                         ),
-#     output: 
-#         plot_solar = RDIR + "graphs/capacity_factors_solar.pdf",
-#         plot_wind = RDIR + "graphs/capacity_factors_wind.pdf",
-#         plot_hydro = RDIR + "graphs/inflow_hydro.pdf",
-#         plot_heat = RDIR + "graphs/heat_load.pdf",
-#     threads: 1
-#     resources: mem_mb=10000 # check jobinfo to see how much memory is used
-#     script: 'scripts/plot_updates.py'
-
 rule resolve_network:
     input:
         overrides = "data/override_component_attrs",
-        #plot_hydro = RDIR + "graphs/inflow_hydro.pdf",
         config= RDIR + 'configs/config.yaml',
-        network = PNDIR + "base_n" + nodes + "_" + tres + "h_updated_dy{design_year}_wy{weather_year}_{opts}.nc"    
+        network = PNDIR + "base_n" + nodes + "_" + tres + "h_updated_dy{design_year}_wy{weather_year}_{opts}_lv{lvl}.nc",
     output: 
-        network = RDIR + "postnetworks/resolved_n"+ nodes + "_" + tres +"h_dy{design_year}_wy{weather_year}_{opts}.nc"
+        network = RDIR + "postnetworks/resolved_n"+ nodes + "_" + tres +"h_dy{design_year}_wy{weather_year}_{opts}_lv{lvl}.nc"
     log:
-        solver="logs/resolved_n"+ nodes + "_" + tres +"h_dy{design_year}_wy{weather_year}_{opts}_solver.log",
-        python="logs/resolved_n"+ nodes + "_" + tres +"h_dy{design_year}_wy{weather_year}_{opts}_python.log",
-        memory="logs/resolved_n"+ nodes + "_" + tres +"h_dy{design_year}_wy{weather_year}_{opts}_memory.log"
+        solver="logs/resolved_n"+ nodes + "_" + tres +"h_dy{design_year}_wy{weather_year}_{opts}_lv{lvl}_solver.log",
+        python="logs/resolved_n"+ nodes + "_" + tres +"h_dy{design_year}_wy{weather_year}_{opts}_lv{lvl}_python.log",
+        memory="logs/resolved_n"+ nodes + "_" + tres +"h_dy{design_year}_wy{weather_year}_{opts}_lv{lvl}_memory.log"
     threads: 4
     resources: mem_mb=config['solving']['mem']
-    benchmark: RDIR + "benchmarks/resolve_network/resolved_dy{design_year}_wy{weather_year}_{opts}"
+    benchmark: RDIR + "benchmarks/resolve_network/resolved_dy{design_year}_wy{weather_year}_{opts}_lv{lvl}"
     script: "scripts/resolve_network.py"
 
 
 rule make_summary:
     input:
         overrides = "data/override_component_attrs",
-        #design_network = PNDIR + "base_n" + nodes + "_" + tres + "h_dy" + dyear + ".nc", 
         networks=expand(
-                        RDIR + "postnetworks/resolved_n"+ nodes + "_" + tres +"h_dy{design_year}_wy{weather_year}_{opts}.nc",
+                        RDIR + "postnetworks/resolved_n"+ nodes + "_" + tres +"h_dy{design_year}_wy{weather_year}_{opts}_lv{lvl}.nc",
                         **config['scenario']
                         ),
     output: 
         summary = RDIR + "csvs/summary.csv",
-        lost_load_plot = RDIR + "graphs/lost_load_duration_curves.pdf",
-        load_shedding_heatmap_time = RDIR + "graphs/load_shedding_heatmap_time.pdf",
-        load_shedding_heatmap_space = RDIR + "graphs/load_shedding_heatmap_space.pdf",
+        #lost_load_plot = RDIR + "graphs/lost_load_duration_curves.pdf",
+        #load_shedding_heatmap_time = RDIR + "graphs/load_shedding_heatmap_time.pdf",
+        #load_shedding_heatmap_space = RDIR + "graphs/load_shedding_heatmap_space.pdf",
     threads: 1
     resources: mem_mb=40000 # check jobinfo to see how much memory is used
     script: 'scripts/make_summary.py'
