@@ -233,7 +233,39 @@ def calculate_renewable_penetration(n):
     
     return solar_share, wind_share, solar_theo_share, wind_theo_share, solar_cap_factor_mean_act, wind_cap_factor_mean_act, solar_cap_factor_mean_theo, wind_cap_factor_mean_theo, solar_cap_factor_mean_ES, wind_cap_factor_mean_DE, solar_cap_factor_var, wind_cap_factor_var, wind_potential, solar_potential
 
-def calculate_co2_emissions(n):
+def groupbycountry(df, component):
+    column_names_df = pd.DataFrame(df.columns)
+    column_names_df["country"] = column_names_df[component].str.split("0",expand=True)[0]
+    column_names_df["country"] = column_names_df["country"] .str.split("1",expand=True)[0]
+    column_names_df["country"] = column_names_df["country"] .str.split("2",expand=True)[0]
+    column_names_df["country"] = column_names_df["country"] .str.split("3",expand=True)[0]
+    column_names_df["country"] = column_names_df["country"] .str.split("4",expand=True)[0]
+    column_names_df["country"] = column_names_df["country"] .str.split("5",expand=True)[0]
+    column_names_df["country"] = column_names_df["country"] .str.split("6",expand=True)[0]
+
+    df.columns = column_names_df["country"]
+    df_country = df.T.groupby(df.T.index).sum().T
+
+    return df_country
+
+def swap_values_from_dfs(index, str, df):
+    df_subset = pd.DataFrame(index = index)
+    df_subset["values"] = df.loc[index]
+    df_subset["new_ind"] = df_subset.index + str
+    df_subset.set_index("new_ind", inplace=True)
+
+    return df_subset
+
+def rename_subset_of_df(index, str, df):
+    df_subset = pd.DataFrame(index = index)
+    df_subset["new_ind"] = df_subset.index + str
+    subset_dict = df_subset["new_ind"].to_dict()
+    df.rename(index=subset_dict, inplace=True)
+
+    return df
+
+
+def calculate_co2_emissions(n, networks_dict, label):
     ###############################################################
     ######################## CO2 emissions ########################
     ###############################################################
@@ -258,6 +290,7 @@ def calculate_co2_emissions(n):
     co2_emittors = co2_emittors.query('efficiency2 != 0') # excluding links with no CO2 emissions (e.g., nuclear)
     co2_t = -n.links_t.p2[co2_emittors.index]*tres_factor
 
+    sig_dig = 3
     co2_t_renamed = co2_t.rename(columns=co2_emittors.carrier.to_dict())
     co2_t_grouped = co2_t_renamed.groupby(by=co2_t_renamed.columns,axis=1).sum().sum()
     for i in range(len(co2_t_grouped.index)):
@@ -322,6 +355,76 @@ def calculate_co2_emissions(n):
     
     return df
 
+def calculate_capacity_and_generation(n):
+
+    # returns capacity in MW and generation in MWh
+
+    weighting = 8760/len(n.snapshots)
+
+    # generators
+    df_generators = n.generators.p_nom_opt.groupby(n.generators.carrier).sum()
+    df_mining = df_generators[["coal","gas","lignite","oil","uranium"]]
+    df_generators.drop(["coal","gas","lignite","oil","uranium"], inplace=True) # remove "mining" from generators (coal, gas, oil, uranium)
+
+    df_generators_t = n.generators_t.p.sum().groupby(n.generators.carrier).sum()
+    df_mining_t = df_generators_t[["coal","gas","lignite","oil","uranium"]]
+    df_generators_t.drop(["coal","gas","lignite","oil","uranium"], inplace=True) # remove "mining" from generators (coal, gas, oil, uranium)
+
+    # links
+    df_links = n.links.p_nom_opt.groupby(n.links.carrier).sum()
+    df_links.drop(["DC"], inplace=True) # remove transmissions links (DC)
+
+    df_links_t1 = -n.links_t.p1.sum().groupby(n.links.carrier).sum()
+    chp_index = df_links_t1.loc[df_links_t1.index.str.contains("CHP")].index
+    df_links_t1 = rename_subset_of_df(chp_index, " (el)", df_links_t1)
+    
+    df_links_t2 = -n.links_t.p2.sum().groupby(n.links.carrier).sum()
+    chp_index = df_links_t2.loc[df_links_t2.index.str.contains("CHP")].index
+    df_subset = swap_values_from_dfs(chp_index, " (heat)", df_links_t2)
+    df_links_t = df_links_t1.append(df_subset["values"])
+
+    df_efficiency = pd.DataFrame()
+    df_efficiency["efficiency1"] = n.links.efficiency # if CHP, this is the electricity
+    df_efficiency["efficiency2"] = n.links.efficiency2 # if CHP, this is the heat. If OCGT, this is the CO2
+    df_efficiency["carrier"] = n.links.carrier
+    df_efficiency = df_efficiency.drop_duplicates()
+    df_efficiency.set_index("carrier", inplace=True)
+    df_efficiency.drop(["DC"], inplace=True) 
+
+    df_links_eff1 = df_links*df_efficiency.loc[df_links.index]["efficiency1"] # accounting for energy losses via the main link
+    chp_index = df_links_eff1.loc[df_links_eff1.index.str.contains("CHP")].index
+    df_links_eff1 = rename_subset_of_df(chp_index, " (el)", df_links_eff1)
+
+    # account for heat pump COP
+    heat_pump_index = df_links_eff1.index.str.contains("heat pump")
+    avg_cop = n.links_t.efficiency[n.links.loc[n.links.index.str.contains("heat pump")].index].mean().mean()
+    df_links_eff1.loc[heat_pump_index] *= avg_cop
+
+    # accounting for the energy losses via the secondary link
+    df_links_eff2 = df_links*df_efficiency.loc[df_links.index]["efficiency2"] 
+    chp_index = df_links_eff2.loc[df_links_eff2.index.str.contains("CHP")].index
+    df_subset = swap_values_from_dfs(chp_index, " (heat)", df_links_eff2)
+    # add df_subset to df_links_eff1
+    df_links = df_links_eff1.append(df_subset["values"])
+
+    # stores
+    df_stores = n.stores
+    df_stores.loc[df_stores.query("carrier == 'H2'").query("capital_cost < 1000").index, "carrier"] = "H2 underground"
+    df_stores.loc[df_stores.query("carrier == 'H2'").query("capital_cost > 1000").index, "carrier"] = "H2 overground"
+    df_stores_sum = df_stores.e_nom_opt.groupby(df_stores.carrier).sum()
+    df_stores_sum.drop(["coal","gas","lignite","oil","uranium"], inplace=True) # remove stores related to mining
+    df_stores_sum.index = df_stores_sum.index + " storage"
+
+    # storage units
+    df_storage_units = n.storage_units.p_nom_opt.groupby(n.storage_units.carrier).sum()
+    df_storage_units_t = pd.Series(index=["hydro"], data =[n.storage_units_t.p[n.storage_units.query("carrier == 'hydro'").index].sum().sum()])
+
+    # concatenate all
+    df_capacity = pd.concat([df_generators, df_links, df_stores_sum, df_storage_units])
+    df_generation = pd.concat([df_generators_t, df_links_t, df_storage_units_t])*weighting
+
+    return df_capacity, df_generation, df_mining, df_mining_t
+
 def prepare_costs(nyears):
     
     fill_values = {"FOM": 0,
@@ -357,12 +460,15 @@ def prepare_costs(nyears):
 
 
 def calculate_costs(n, label, costs):
-    opt_name = {"Store": "e", "Line": "s", "Transformer": "s"}
 
-    for c in n.iterate_components(
-        n.branch_components | n.controllable_one_port_components ^ {"Load"}
-    ):
-        capital_costs = c.df.capital_cost * c.df[opt_name.get(c.name, "p") + "_nom_opt"]
+    opt_name = {
+        "Store": "e",
+        "Line": "s",
+        "Transformer": "s"
+        }
+
+    for c in n.iterate_components(n.branch_components|n.controllable_one_port_components^{"Load"}):
+        capital_costs = c.df.capital_cost*c.df[opt_name.get(c.name,"p") + "_nom_opt"]
         capital_costs_grouped = capital_costs.groupby(c.df.carrier).sum()
 
         capital_costs_grouped = pd.concat([capital_costs_grouped], keys=["capital"])
@@ -374,23 +480,24 @@ def calculate_costs(n, label, costs):
 
         if c.name == "Link":
             p = c.pnl.p0.multiply(n.snapshot_weightings.generators, axis=0).sum()
+
         elif c.name == "Line":
             continue
+        
         elif c.name == "StorageUnit":
             p_all = c.pnl.p.multiply(n.snapshot_weightings.generators, axis=0)
-            p_all[p_all < 0.0] = 0.0
+            p_all[p_all < 0.] = 0.
             p = p_all.sum()
+        
         else:
             p = c.pnl.p.multiply(n.snapshot_weightings.generators, axis=0).sum()
 
-        # correct sequestration cost
+        #correct sequestration cost
         if c.name == "Store":
-            items = c.df.index[
-                (c.df.carrier == "co2 stored") & (c.df.marginal_cost <= -100.0)
-            ]
-            c.df.loc[items, "marginal_cost"] = -20.0
+            items = c.df.index[(c.df.carrier == "co2 stored") & (c.df.marginal_cost <= -100.)]
+            c.df.loc[items, "marginal_cost"] = -20.
 
-        marginal_costs = p * c.df.marginal_cost
+        marginal_costs = p*c.df.marginal_cost
 
         marginal_costs_grouped = marginal_costs.groupby(c.df.carrier).sum()
 
@@ -399,24 +506,10 @@ def calculate_costs(n, label, costs):
 
         costs = costs.reindex(marginal_costs_grouped.index.union(costs.index))
 
-        costs.loc[marginal_costs_grouped.index, label] = marginal_costs_grouped
+        costs.loc[marginal_costs_grouped.index,label] = marginal_costs_grouped
 
     return costs
 
-def groupbycountry(df, component):
-    column_names_df = pd.DataFrame(df.columns)
-    column_names_df["country"] = column_names_df[component].str.split("0",expand=True)[0]
-    column_names_df["country"] = column_names_df["country"] .str.split("1",expand=True)[0]
-    column_names_df["country"] = column_names_df["country"] .str.split("2",expand=True)[0]
-    column_names_df["country"] = column_names_df["country"] .str.split("3",expand=True)[0]
-    column_names_df["country"] = column_names_df["country"] .str.split("4",expand=True)[0]
-    column_names_df["country"] = column_names_df["country"] .str.split("5",expand=True)[0]
-    column_names_df["country"] = column_names_df["country"] .str.split("6",expand=True)[0]
-
-    df.columns = column_names_df["country"]
-    df_country = df.T.groupby(df.T.index).sum().T
-
-    return df_country
 
 def calculate_capacity_deficit(n,loads, loads_t, generators, bus):
     exogenous_demand_t = loads_t[loads.query("carrier == 'electricity'").index].sum(axis=1) + loads_t[loads.query("carrier == 'industry electricity'").index].sum(axis=1)
@@ -533,5 +626,3 @@ def calculate_unserved_energy(n,
         unserved_energy.loc[t_ind] = np.array(A[b])/np.array(D[b])*100
 
     return unserved_energy
-
-
