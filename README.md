@@ -3,6 +3,8 @@
 
 This repository builds on top of the [PyPSA-Eur](https://github.com/PyPSA/pypsa-eur) framework to run dispatch optimization for weather years from 1960 to 2021, in order to evaluate energy adequacy and CO2 emissions abatement. It makes use of the Snakemake workflow which allows parallel computing.
 
+![panel_fig1](pseudo_code.png)
+
 **Instructions**
 
 *1. Install dependencies:*
